@@ -1,0 +1,10 @@
+Package: pdf-merger
+Version: 1.0
+Section: office
+Priority: optional
+Architecture: amd64
+Maintainer: Dhakshinesh Anandh <dhakshineshanandh@gmail.com>
+Depends: python3, python3-pip, libxcb-cursor0, libxcb-xinerama0, libxkbcommon-x11-0
+Description: PDF merger utility with GNOME panel integration
+ A lightweight PDF merger utility for GNOME.
+ Includes drag-and-drop support and top-panel integration.

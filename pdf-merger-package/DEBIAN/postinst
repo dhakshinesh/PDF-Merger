@@ -1,0 +1,15 @@
+#!/bin/bash
+
+set -e
+python3 -m venv /usr/share/pdf-merger/venv
+# Install Python dependencies
+/usr/share/pdf-merger/venv/bin/pip install \
+    -r /usr/share/pdf-merger/requirements.txt
+# Enable extension
+if command -v gnome-extensions >/dev/null; then
+    gnome-extensions enable pdf-merger@dhakshinesh.com || true
+fi
+
+update-desktop-database || true
+
+exit 0

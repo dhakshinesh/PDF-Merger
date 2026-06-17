@@ -1,0 +1,11 @@
+{
+    "uuid": "pdf-merger@dhakshinesh.com",
+    "name": "PDF Merger",
+    "description": "Launch PDF Merger utility",
+    "shell-version": [
+        "46",
+        "47",
+        "48"
+    ],
+    "version": 1
+}
