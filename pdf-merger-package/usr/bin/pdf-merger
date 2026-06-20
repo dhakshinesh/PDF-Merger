@@ -1,6 +1,0 @@
-#!/bin/bash
-
-export QT_QPA_PLATFORM=xcb
-
-/usr/share/pdf-merger/venv/bin/python3 \
-    /usr/share/pdf-merger/main.py

@@ -1,9 +1,0 @@
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=PDF Merger
-Comment=Merge PDF files
-Exec=pdf-merger
-Icon=pdf-merger
-Terminal=false
-Categories=Office;

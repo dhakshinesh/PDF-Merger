@@ -1,7 +1,9 @@
 import sys
 from PyQt6.QtWidgets import (
     QApplication,
+    QMenu,
     QMessageBox,
+    QToolButton,
     QWidget,
     QLabel,
     QPushButton,
@@ -9,13 +11,12 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QFileDialog
 )
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtCore import QUrl, Qt
+from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import QPoint, Qt
 
 from PyQt6.QtWidgets import QListWidget
 from PyQt6.QtCore import Qt
 
-from PyQt6.QtWidgets import QListWidgetItem
 from PyQt6.QtCore import QTimer
 
 from pdf_service import PyPDFService
@@ -26,11 +27,15 @@ from PyQt6.QtNetwork import (
     QLocalServer,
     QLocalSocket
 )
+from install_extension import is_gnome, extension_installed, install_extension, enable_extension
+
+from uninstaller import uninstall_application
 
 class DropArea(QLabel):
-    def __init__(self):
+    def __init__(self, sidebar):
         super().__init__()
 
+        self.sidebar = sidebar
         self.setAcceptDrops(True)
 
         self.files = []
@@ -56,6 +61,17 @@ class DropArea(QLabel):
 
         self.setStyleSheet(self.default_style)
 
+    def add_files(self, files):
+
+        for file_path in files:
+
+            if file_path.lower().endswith(".pdf"):
+
+                if file_path not in self.files:
+                    self.files.append(file_path)
+
+        self.sidebar.update_file_list()
+
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
@@ -66,19 +82,30 @@ class DropArea(QLabel):
 
     def dropEvent(self, event):
         self.setStyleSheet(self.default_style)
+        files = []
 
         for url in event.mimeData().urls():
-
             file_path = url.toLocalFile()
 
             if file_path.lower().endswith(".pdf"):
+                files.append(file_path)
 
-                if file_path not in self.files:
-                    self.files.append(file_path)
-
-        self.parent().update_file_list()
+        self.add_files(files)
 
         event.acceptProposedAction()
+        self.sidebar.update_file_list()
+        event.acceptProposedAction()
+    
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            files, _ = QFileDialog.getOpenFileNames(
+                None,
+                "Select PDF Files",
+                "",
+                "PDF Files (*.pdf)"
+            )
+            self.add_files(files)
+        super().mouseDoubleClickEvent(event)
 
 
 class Sidebar(QWidget):
@@ -92,37 +119,160 @@ class Sidebar(QWidget):
         self.position_window()
         self.pdf_service = PyPDFService()
 
+        self.drag_position = QPoint()
+
+        self.force_exit = False
+
+        if is_gnome() and not extension_installed():
+            self.install_extension_btn.show()
+        else:
+            self.install_extension_btn.hide()
+            self.status_label.setMaximumWidth(280)
+
     def setup_window(self):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint
         )
-
         self.setFixedWidth(320)
 
+        self.setAttribute(
+            Qt.WidgetAttribute.WA_TranslucentBackground
+        )
+
+
     def setup_ui(self):
-        layout = QVBoxLayout()
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(
+            10, 10, 10, 10
+        )
+        container = QWidget()
+        container.setObjectName("container")
+
+        container.setStyleSheet("""
+            QWidget#container {
+                border-radius: 15px;
+                border: 1px solid #444;
+            }
+        """)
+        outer_layout.addWidget(container)
+
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(
+            10, 10, 10, 10
+        )
 
         # Title
         title_bar = QHBoxLayout()
+        #drag handle
+        self.drag_button = QPushButton("⣿")
+        self.drag_button.setFixedWidth(40)
+        self.drag_button.setCursor(
+            Qt.CursorShape.SizeAllCursor
+        )
 
-        title = QLabel("PDF Merger")
+        self.drag_button.mousePressEvent = self.drag_mouse_press
+        self.drag_button.mouseMoveEvent = self.drag_mouse_move
+        self.drag_button.mouseReleaseEvent = self.drag_mouse_release
 
-        close_btn = QPushButton("-")
-        close_btn.setFixedSize(30, 30)
-        close_btn.clicked.connect(self.closeEvent)
+        self.title = QLabel("PDF Merger")
 
-        title_bar.addWidget(title)
+        self.settings_btn = QToolButton()
+        self.settings_btn.setIcon(
+            QIcon.fromTheme("preferences-system")
+        )
+        self.settings_btn.setToolTip(
+            "Application settings"
+        )
+        self.settings_btn.setPopupMode(
+            QToolButton.ToolButtonPopupMode.InstantPopup
+        )
+        settings_menu = QMenu(self)
+        uninstall_action = settings_menu.addAction(
+            QIcon.fromTheme("edit-delete"),
+            "Uninstall PDF Merger"
+        )
+
+        uninstall_action.triggered.connect(
+            self.uninstall_application
+        )
+
+        self.settings_btn.setMenu(
+            settings_menu
+        )
+
+        self.close_btn = QPushButton("-")
+        self.close_btn.setFixedSize(30, 30)
+        self.close_btn.clicked.connect(self.close)
+
+        title_bar.addWidget(self.drag_button)
+        title_bar.addWidget(self.title)
         title_bar.addStretch()
-        title_bar.addWidget(close_btn)
+        title_bar.addWidget(self.settings_btn)
+        title_bar.addWidget(self.close_btn)
 
-        title.setStyleSheet("""
+        self.drag_button.setStyleSheet("""
+            QPushButton {
+                border: none;
+                font-size: 14px;
+            }
+
+            QPushButton:hover {
+                background-color: #404040;
+                border-radius: 4px;
+            }
+        """)
+
+        self.title.setStyleSheet("""
             font-size: 20px;
             font-weight: bold;
             padding: 10px;
+            background-color: transparent;
         """)
 
-        close_btn.setStyleSheet("""
+        self.settings_btn.setStyleSheet("""
+            QToolButton {
+                border: none;
+                border-radius: 8px;
+                padding: 6px;
+                font-size: 16px;
+                background: transparent;
+            }
+
+            QToolButton:hover {
+                background: rgba(255,255,255,0.08);
+            }
+
+            QToolButton:pressed {
+                background: rgba(255,255,255,0.15);
+            }
+        """)
+
+        settings_menu.setStyleSheet("""
+            QMenu {
+                background-color: #2b2b2b;
+                border: 1px solid #444;
+                border-radius: 8px;
+                padding: 6px;
+            }
+
+            QMenu::item {
+                padding: 8px 24px 8px 12px;
+                border-radius: 6px;
+            }
+
+            QMenu::item:selected {
+                background-color: #3a82f7;
+            }
+
+            QMenu::separator {
+                height: 1px;
+                background: #444;
+                margin: 4px 0px;
+            }
+        """)
+
+        self.close_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
                 border: none;
@@ -137,7 +287,7 @@ class Sidebar(QWidget):
         """)
 
         # Drop area
-        self.drop_area = DropArea()
+        self.drop_area = DropArea(self)
         self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.drop_area.setMinimumHeight(200)
@@ -200,17 +350,35 @@ class Sidebar(QWidget):
         output_layout.addWidget(self.open_output_btn)
 
         #Status label
+        status_layout = QHBoxLayout()
         self.status_label = QLabel("Developed by: Dhakshinesh")
         self.status_label.setWordWrap(True)
 
         self.status_label.setStyleSheet("""
             QLabel {
                 color: #BBBBBB;
-                font-size: 12px;
                 padding: 5px;
-                border-top: 1px solid #444;
             }
         """)
+
+        #Extension Button : Shows only if the user is on GNOME and the extension is not installed
+        self.install_extension_btn = QPushButton("🧩")
+        self.install_extension_btn.setToolTip(
+            """
+        Adds a PDF icon to the GNOME top panel.
+
+        The panel widget lets you quickly open
+        PDF Merger from the menu bar without
+        searching for the application.
+        """
+        )
+        self.install_extension_btn.clicked.connect(
+            self.install_gnome_extension
+        )
+        self.status_label.setMaximumWidth(250)
+        status_layout.addWidget(self.status_label)
+        self.install_extension_btn.setMaximumWidth(30)
+        status_layout.addWidget(self.install_extension_btn)
 
         layout.addLayout(title_bar)
         layout.addWidget(self.drop_area)
@@ -219,9 +387,7 @@ class Sidebar(QWidget):
         layout.addWidget(self.remove_btn)
         layout.addWidget(self.clear_btn)
         layout.addLayout(output_layout)
-        layout.addWidget(self.status_label)
-
-        self.setLayout(layout)
+        layout.addLayout(status_layout)
 
         self.setStyleSheet("""
             QWidget {
@@ -378,16 +544,70 @@ class Sidebar(QWidget):
         self.status_label.setStyleSheet("""
             QLabel {
                 color: #BBBBBB;
-                font-size: 12px;
                 padding: 5px;
                 border-top: 1px solid #444;
             }
         """)
         self.status_label.setText("Developed by: Dhakshinesh")
 
-    def closeEvent(self):
-        self.hide()
-    
+    def closeEvent(self, event):
+        if self.force_exit:
+            event.accept()
+
+        else:
+            self.hide()
+            event.ignore()
+
+    def install_gnome_extension(self):
+
+        try:
+            install_extension()
+            enable_extension()
+
+            self.show_success("Extension installed! Restart to see widget.")
+
+            self.install_extension_btn.hide()
+            self.status_label.setMaximumWidth(280)
+
+        except Exception as e:
+            print(f"Failed to install extension: {str(e)}")
+            self.show_error(f"Failed to install extension: {str(e)}")
+
+    def uninstall_application(self):
+        try:
+            uninstall_application(self)
+            self.show_info("Restart the application to complete uninstallation.")
+            #sleep and end application after 2 seconds
+            self.force_exit = True
+            QTimer.singleShot(2000, self.close)
+
+        except Exception as e:
+            self.show_error(f"Failed to uninstall: {str(e)}")
+    def drag_mouse_press(self, event):
+
+        if event.button() == Qt.MouseButton.LeftButton:
+
+            self.drag_position = (
+                event.globalPosition().toPoint()
+                - self.frameGeometry().topLeft()
+            )
+
+            event.accept()
+
+    def drag_mouse_move(self, event):
+
+        if event.buttons() & Qt.MouseButton.LeftButton:
+
+            self.move(
+                event.globalPosition().toPoint()
+                - self.drag_position
+            )
+
+            event.accept()
+
+    def drag_mouse_release(self, event):
+        pass
+
     def position_window(self):
         screen = QApplication.primaryScreen().availableGeometry()
 
